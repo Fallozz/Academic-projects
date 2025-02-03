@@ -1,0 +1,190 @@
+---
+title: "Devoir à rendre"
+author: "Fabien Noisette et Léa Martineau"
+date: "20/03/2023"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Partie A
+
+## Question 1
+```{r, warning = FALSE, message = FALSE}
+require(data.table)
+require(stargazer)
+library(haven)
+data<-read_dta("Data/crime1_simplified.dta")
+head(data)
+data$inc86sqr<-data$inc86^2
+```
+
+## Question 2
+```{r}
+nrow(data)
+ncol(data)
+sapply(data, class)
+```
+Il y a **`r nrow(data)`** observations et **`r ncol(data)`** variables. Les variables sont toutes numeriques donc quantitatives (en comptant *inc86sqr* que nous avons créé plutôt).
+
+## Question 3
+```{r}
+sum(is.na(data))
+```
+Il n'y a aucune valeur omise.
+
+## Question 4
+On utilisera pour ce faire la commande *summary* :
+```{r}
+summary(data)
+```
+Les données ne paraissent pas incohérentes. En effet l'homme qui s'est le plus fait arrêté en 1986 de la base de donnée s'est fait arrêté 12 fois, avec une moyenne dans la base de donnée de 0.4 arrestations par personne pendant l'année.
+La proportion maximale d'arrestation menant à une condamnation est 1 ce qui n'est pas incohérent non plus. De même que le nombre maximum de mois passé en prison en 1986 ne dépasse pas 12 (12 mois dans une année), et que le nombre maximum de trimestre où la personne a travaillé en 1986 ne dépasse pas 4.
+
+
+# Partie B
+
+## Question 1
+Dans un régression où l'on met *narr86* en dépendante, on s'attend (en supposant) à ce que le coefficient de :
+
+* *pcnv* soit négatif puisque plus une personne s'est fait condamnée moins elle a tendance à récidiver.
+* *avgsen* soit négatif puisque plus la personne est punie sévèrement moins elle a envie de récidiver.
+* *ptime86* soit négatif puisque plus une personne passe de temps en prison en 1986 moins elle a de temps pour récidiver dans la même année.
+* *qemp86* soit négatif puisque une personne qui travaille peut être considérée comme remise sur le droit chemin et donc moins récidiver.
+* *inc86* soit négatif, en considérant que plus on a d'argent, moins on a besoin d'enfreindre la loi pour en obtenir (en moyenne).
+
+## Question 2
+```{r}
+reg1 <- lm(narr86~pcnv+avgsen+ptime86+qemp86+inc86,data=data)
+summary(reg1)
+```
+
+
+## Question 3
+On peut pour se faire se référer directement à la p-value des différents coefficients qui sont donnés par :
+```{r}
+summary(reg1)$coefficients[c(1:6),4]
+```
+Je précise que l'on va prendre 5% comme règle de décision. On interprète si les coefficients sont significatifs à ce seuil. Les p-values sont pour :
+
+* *pcnv* : `r summary(reg1)$coefficients[2,4]`. Elle est inférieure à 0,05, le coefficient est significatif à un risque de première espèce de 5%. Interprétation :  
+D'après l'échantillon, une augmentation d'1 point de pourcentage de la proportion des arrestations menant à une condamnation chez un individu est associée en moyenne à une baisse de son nombre d'arrestation de **`r abs(summary(reg1)$coefficients[2,1])`** de l'année 1986, à autres facteurs fixés.
+
+* *avgsen* : `r summary(reg1)$coefficients[3,4]`. Elle est supérieure à 0,05, le coefficient n'est pas significatif à un risque de première espèce de 5%. Je décide de ne pas interpréter le coefficient.
+
+* *ptime86* : `r summary(reg1)$coefficients[4,4]`. Elle est inférieure à 0,05, le coefficient est significatif à un risque de première espèce de 5%. Interprétation :  
+D'après l'échantillon, une augmentation d'1 mois passé en prison en 1986 d'un individu est associée en moyenne à une baisse de son nombre d'arrestation de **`r abs(summary(reg1)$coefficients[4,1])`** de l'année 1986, à autres facteurs fixés.
+
+* *qemp86* : `r summary(reg1)$coefficients[5,4]`. Elle est inférieure à 0,05, le coefficient est significatif à un risque de première espèce de 5%. Interprétation :  
+D'après l'échantillon, une augmentation d'1 trimestre passé à travailler en 1986 chez un individu est associée en moyenne à une baisse de son nombre d'arrestation de **`r abs(summary(reg1)$coefficients[5,1])`** de l'année 1986, à autres facteurs fixés.
+
+* *inc86* : `r summary(reg1)$coefficients[6,4]`. Elle est inférieure à 0,05, le coefficient est significatif à un risque de première espèce de 5%. Interprétation :  
+D'après l'échantillon, une augmentation de 100 dollars du revenu disponible d'un individu en 1986 est associée en moyenne à une baisse de son nombre d'arrestation de **`r abs(summary(reg1)$coefficients[6,1])`** de l'année 1986, à autres facteurs fixés.
+
+
+## Question 4
+```{r}
+reg2 <- lm(narr86~pcnv+avgsen+ptime86+qemp86+inc86+inc86sqr,data=data)
+summary(reg2)
+```
+Pour savoir si l'ajout du revenu au carré dans la régression est nécessaire, on donne la p-value associée à son coefficient, puis on la compare à notre règle de décision (5%):
+```{r}
+summary(reg2)$coefficients[7,4]
+```
+Elle vaut `r summary(reg2)$coefficients[7,4]`, ce qui est inférieur à 0.05 : le coefficient associé au revenu au carré est significatif, donc nécessaire à la régression.
+Ce coefficient est nécessaire car il permet également de traduire un effet de convexité dans la relation entre le revenu de la personne en 1986 et le nombre de fois où elle s'est fait arrêtée dans la même année. En effet, un accroissement du revenu dans les premières valeurs à un effet négatif sur le nombre d'arrestations, mais au bout d'un moment, la tendance s'inverse.
+Cela peut s'expliquer par le fait que certaines personnes riches utilise le crime comme moyen de se faire de l'argent.  
+"Derrière chaque grande fortune se cache un grand crime" - Honoré de Balzac
+
+## Question 5
+Interprétation de chaque coefficients :
+```{r}
+summary(reg2)$coefficients[c(1:7),1]
+```
+
+* D'après l'échantillon, une augmentation d'1 point de pourcentage de la proportion des arrestations menant à une condamnation chez un individu est associée en moyenne à une baisse de son nombre d'arrestation de **`r abs(summary(reg2)$coefficients[2,1])`** de l'année 1986, à autres facteurs fixés.
+
+* D'après l'échantillon, une augmentation d'1 mois de la durée moyenne de la peine pour les condamnations avant 1986 chez un individu est associée en moyenne à une hausse de son nombre d'arrestation de **`r abs(summary(reg2)$coefficients[3,1])`** de l'année 1986, à autres facteurs fixés.
+
+* D'après l'échantillon, une augmentation d'1 mois passé en prison en 1986 d'un individu est associée en moyenne à une baisse de son nombre d'arrestation de **`r abs(summary(reg2)$coefficients[4,1])`** de l'année 1986, à autres facteurs fixés.
+
+* D'après l'échantillon, une augmentation d'1 trimestre passé à travailler en 1986 chez un individu est associée en moyenne à une baisse de son nombre d'arrestation de **`r abs(summary(reg2)$coefficients[5,1])`** de l'année 1986, à autres facteurs fixés.
+
+* D'après l'échantillon, une augmentation de 100 dollars du revenu disponible d'un individu en 1986 est associée en moyenne à une variation de son nombre d'arrestation de **`r summary(reg2)$coefficients[6,1]` + 2 * `r summary(reg2)$coefficients[7,1]` * _inc86_ ** de l'année 1986, à autres facteurs fixés.
+
+Les résultats ne sont pas contre-intuitifs sauf pour *avgsen*, où l'on peut remarquer un "effet d'entraînement". On peut alors supposer d'après l'échantillon que plus une personne aura des peines longues pour ses infractions commis avant 1986, plus il a commis des infractions graves, plus il est à l'aise avec le fait de commettre des infractions. Cet effet ne paraît toutefois pas signficatif.
+Il est possible d'ajouter que le coefficient associé à *quemp86* est devenu non-significatif lors de l'ajout du revenu au carré.
+
+## Question 6
+Nous allons pour ce faire tester l'homoscédasticité selon le test de Breusch-Pagan avec comme risque de première espèce 5% :  
+H0 : V(u|x) = $\sigma^2$  
+H1 : V(u|x) = $\sigma_i^2, \forall i\in[1,2725]$
+
+```{r}
+require(lmtest)
+bptest(reg2)
+```
+
+On obtient un p-value = `r bptest(reg2)$p.value` < 0.05, on rejette H0 : il existe un problème d'hétéroscédasticité dans les données.
+
+## Question 7
+On corrige les erreurs-types :
+```{r}	
+library("lmtest")
+library("sandwich")
+coeftest(reg2, vcov = vcovHC(reg2, type = "HC0"))
+summary(reg2)
+```
+On remarque que les coefficients qui étaient significatifs le sont davantages, et ceux qui ne l'étaient pas le sont toujours. Par exemple la p-value de *inc86sqr* passe de `r summary(reg2)$coefficients[7,4]` à `r coeftest(reg2, vcov = vcovHC(reg2, type = "HC0"))[7, "Pr(>|t|)"]` et devient significatif à 0.1%.
+
+# Partie C
+
+## Question 1
+```{r}
+data$condamne<-ifelse(data$pcnv == 0, 0, 1)
+```
+
+## Question 2
+```{r}
+reg3 <- lm(narr86~condamne+avgsen+ptime86+qemp86+inc86+inc86sqr,data=data)
+summary(reg3)
+```
+
+## Question 3
+Pour ce faire, on regarde la p-value associée au coefficient de l'indicatrice que nous venons de créer, puis on la compare à notre risque de première espèce de 5% (0.05). On remarque que la p-value de *condamne* est de `r summary(reg3)$coefficients[2,4]`, largement supérieure à 0.05. On en déduit alors que le coefficient associé à l'indicatrice n'est pas significatif, *condamne* n'a pas d'impact significatif dans la régression.
+Le fait d'être condamné avant 1986 est associé à une baisse de `r abs(summary(reg3)$coefficients[2,1])` arrestations en 1986 en moyenne et à autres facteurs fixés.
+
+## Question 4
+Dans ce cas nous ajoutons au modèle un variable d'interaction entre *condamne* et *qemp86*. On peut le faire en mettant un "*" entre ces deux variables ou ajouter manuellement l'interaction avec "I()". Nous utiliserons ici la 2ème option pour pouvoir comparer plus facilement les résultats.
+
+## Question 5
+```{r}
+reg4 <- lm(narr86~condamne+avgsen+ptime86+qemp86+inc86+inc86sqr+I(condamne*qemp86),data=data)
+summary(reg4)
+```
+
+## Question 6
+On va baser nos calcul sur l'équation représentant notre modèle estimé :
+\begin{equation*}
+narr86_i=\beta_0+\beta_1 condamne_i+\beta_2 avgsen_i+\beta_3 ptime86_i+\beta_4 qemp86_i+\beta_5 inc86_i+\beta_6 inc86_i^2+\beta_7 condamne*qemp86_i+u_i
+\end{equation*}
+Ici on calcule l'effet marginal d'un trimestre travaillé par rapport au nombre d'arrestation en 1986 sachant que la personne a été condamné auparavant, donné par la formule :
+\begin{equation*}
+\frac{\partial narr86|condamne = 1}{\partial qemp86} = \beta_4 + \beta_7
+\end{equation*}
+Avec $\beta_4$ valant `r summary(reg4)$coefficients[5,1]` et $\beta_7$ valant `r summary(reg4)$coefficients[8,1]`, pour un effet marginal de `r summary(reg4)$coefficients[5,1]` - `r abs(summary(reg4)$coefficients[8,1])` = **`r summary(reg4)$coefficients[5,1]+summary(reg4)$coefficients[8,1]`**.  
+Puis on calcule la même chose pour une personne qui n'a pas été condamnée auparavant :
+\begin{equation*}
+\frac{\partial narr86|condamne = 0}{\partial qemp86} = \beta_4
+\end{equation*}
+Ici $\beta_7$ disparaît puisque condamne vaut 0, laissant uniquement $\beta_4$ donc **`r summary(reg4)$coefficients[5,1]`**.  
+On remarque que la différence est significative puisque l'on passe d'un effet positif à négatif.
+
+# Partie D
+
+En synthèse on peut dire que l'échantillon est relativement grand, ce qui nous permet d'avoir des coefficients plus précis. 
+
+La significativité des variables varie en fonction des spécifications du modèle, certains deviennent signficatifs à l'ajout de variables et d'autres perdent leur signficativité. On remarque néanmoins que *inc86* et *ptime86* restent significatifs à travers les différentes spécifications.
+
+On peut aussi penser qu'il existe des problème dans la spécification du modèle, notamment d'endogénéité. Des "bons" candidats de variables omises existent comme par exemple la participation de l'individu à un programme de réinsertion dans la société après la/les condamnations avant 1986, ou simplement le niveau d'éducation des parents. On remarque que ces deux exemples sont corrélés à la fois avec le nombre d'arrestation d'un individu en 1986(*narr86*), et avec une ou plusieurs variables indépendantes du modèle comme *inc86* ou *qemp86*.
+
