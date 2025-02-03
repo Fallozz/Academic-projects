@@ -1,0 +1,762 @@
+---
+title: "Étude du sondage sur les étudiants de l'Université de Tours"
+author: "Fabien Noisette, Amélie Roy et Mathéo Richer"
+date: "Jeudi 14 Décembre 2023"
+lang: "fr"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_section: no
+    theme: flatly
+    df_print: paged
+  pdf_document:
+    toc: yes
+    keep_tex: yes
+    number_section: no
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r options_chunk,echo=FALSE,warning=FALSE}
+knitr::opts_chunk$set(
+  echo=FALSE,fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+```{r packages, warning = FALSE, message = FALSE}
+library(knitr) # pour les tableaux et le pipe %>% 
+library(kableExtra) # pour les tableaux
+library(ggplot2) # pour les graphiques
+library(ggridges) # pour les graphiques de densité décalés sur l'axe des ordonnées
+library(readr)# pour importer avec des espaces dans les noms de variables
+library(dplyr)# manipulation des base de données
+library(forcats)# manipulation de facteurs
+library(modelsummary)# pour faire des tableaux résumés
+
+library(patchwork)# pour coller des graphiques ensemble
+```
+
+```{r theme_graphique}
+theme_set(theme_minimal())
+```
+
+<!-- Création de fonctions -->
+
+```{r fonctions}
+kable_plus<-function(tab,transp=FALSE,...){
+  if(transp==TRUE){
+    tab<-t(tab)
+  }
+  tab |>   
+  kable(
+    align="c",
+    ...
+   ) |>  
+  kable_styling(
+    full_width=TRUE,
+    position="center",
+    bootstrap_options=c("hover", "bordered")
+  )
+} # Fonction permettant d'appliquer une présentation à un tableau
+
+surligne<-function(case,...){
+  column_spec(case,
+              background = "lemonchiffon",
+              ...
+              )
+}
+```
+
+
+<!-- Importation des données et changement des noms de variables -->
+
+```{r data,message=F}
+# Base de données
+data <- read_delim("data/sondage_version_finale.csv", delim = ";")
+```
+
+<!-- Changement et création de variables -->
+
+```{r rythme,warning=FALSE}
+data$`Rythme de consommation d'alcool` <- factor(data$`Rythme de consommation d'alcool`, levels=c("Jamais","Moins d'une fois par mois","Moins d'une fois par semaine","Environ une fois par semaine","Plusieurs fois par semaine"))
+#permet de réordonner les réponses (selon la fréquence)
+```
+
+```{r valeur}
+data<- data |> 
+  mutate(
+    `Nombre de soirées par semaine en moyenne` = case_when(
+    `Nombre de soirées par semaine en moyenne` < 1 ~ 0,
+    TRUE ~`Nombre de soirées par semaine en moyenne`))
+
+data <- data |> 
+  mutate(tabac = ifelse(grepl("oui", `Fumez-vous du tabac ?`, ignore.case = TRUE), "Oui", "Non"))
+
+# on admet que les répondants faisant moins d'une soirée par semaine n'en font pas, et que les répondants fumant occasionnellement ou régulièrement fument
+```
+
+```{r}
+data<- data |> 
+  mutate(conso_hebdplus = case_when(
+    `Rythme de consommation d'alcool` == "Environ une fois par semaine" ~ "Oui",
+    `Rythme de consommation d'alcool` == "Plusieurs fois par semaine" ~ "Oui",
+    TRUE ~ "Non"
+  )) # on discrimine les consommateurs hebdomadaire ou plus des consommateurs moins réguliers. Cela va nous faciliter certaines parties de l'analyse.
+```
+
+
+# Introduction
+
+## Présentation de l'axe d'étude
+
+Ce document est un devoir à rendre. Nous somme **Fabien Noisette**, **Amélie Roy** et **Mathéo Richer**, élèves en 3ème année de Licence d'économie à l'[Université de Tours](https://www.univ-tours.fr/). Il s'agit d'une étude statitistique  basée sur **`r nrow(data)`** observations (étudiants) ayant répondu à un questionnaire général. Nous allons faire une analyse detaillée concernant : ***De quelle façon l'alcool et les soirées impact la vie des étudiants ?*** Nous tâcherons de montrer des relations entre les réponses des étudiants et leur consommation d'alcool, par des tests statistiques, des tableaux et des graphiques, puis tirer des conclusions de nos résultats.
+
+La mesure du niveau de consommation d'alcool est donnée par la question "*Quel est votre rythme de consommation d'alcool ?*", avec comme modalités possible :
+
+* *Jamais*
+* *Moins d'une fois par mois*
+* *Moins d'une fois par semaine*
+* *Environ une fois par semaine*
+* *Plusieurs fois par semaine*
+
+Il est également important de noter que les répondants ayant donné un nombre de soirées par semaine inférieur à 1 sont considérés comme ne faisant pas de soirée. Il est alors judicieux de considérer la part des étudiants ne faisant pas de soirée (0) comme des étudiants en faisant peu.
+
+Nous allons dans cette étude nous concentrer en premier sur la relation entre l'alcool et les soirées, puis les relations entre ces variables et le genre des étudiants, et enfin une généralisation à un ensemble d'autres variables
+
+## Tableaux représentatifs introductifs
+
+On peut commencer par donner un tableau d'effectif de ces deux données
+
+Tableau de fréquence en % du nombre d'étudiants et de leurs façons de consommer de l'alcool
+```{r tab freq alc}
+tab_freq<-t(
+  100*addmargins(
+    round(
+      proportions(
+        table(data$`Rythme de consommation d'alcool`)),digits=3)))
+colnames(tab_freq)[6]<-"Total"
+tab_freq |> 
+  kable_plus()
+```
+
+Tableau de fréquence en % du nombre de soirée par semaine des étudiants
+```{r tab freq soiree}
+tab_freq<-t(
+  100*addmargins(
+    round(
+      proportions(
+        table(data$`Nombre de soirées par semaine en moyenne`)),digits=3)))
+colnames(tab_freq)[6]<-"Total"
+tab_freq |> 
+  kable_plus()
+```
+La somme des pourcentages n'est pas égale à 100% en raison des arrondis.
+
+## Représentation graphique introductifs
+
+```{r graph 1,warning=FALSE,message=FALSE,fig.width=12}
+plot2<- data |> 
+  ggplot()+ 
+  aes(x=factor(`Nombre de soirées par semaine en moyenne`))+
+  geom_bar(alpha=0.9,
+                 fill="paleturquoise2")+
+  labs(x = "", y = "", 
+       title="Répartition des répondants par nombre de soirée/semaine")+
+  theme(legend.position="none")
+plot1 <-data |> 
+  ggplot()+
+  theme(axis.text.x = element_text(angle = 15, hjust = 0.55, vjust = 0.6)) + 
+  aes(x=ordered(`Rythme de consommation d'alcool`))+
+  geom_histogram(alpha=0.9,
+                 stat="count",
+                 fill="cyan4")+
+  labs(x = "", y="Effectif pour chaque modalités", 
+       title="Répartition des répondants par consommation d'alcool")+
+  theme(legend.position="none")+
+  scale_y_continuous(breaks=c(0,10,20,30,40,50,60,70,80))
+
+plot1 + plot2
+```
+
+```{r}
+temp1<- (100*(sum(data$`Rythme de consommation d'alcool` == "Environ une fois par semaine") + sum(data$`Rythme de consommation d'alcool` == "Moins d'une fois par semaine"))/sum(nrow(data))) |> round(3)
+```
+
+On remarque du tableau qu'une bonne proportion (`r temp1`) d'étudiants consomment de l'alcool entre une fois par mois et une fois par semaine, ce qui représente une part considérable des étudiants
+
+# Les liens entre la consommation d'alcool et le nombre de soirées effectuées
+
+On s'intéresse dans cette partie à observer s'il existe véritablement une relation entre consommation d'alcool et nombre de soirées effectuées par les étudiants. Un premier tableau peut être construit
+
+```{r tab_soiree}
+tabsoiree<- table(data$`Rythme de consommation d'alcool`, data$`Nombre de soirées par semaine en moyenne`)
+ kable(
+    tabsoiree,
+    align = "c",
+    caption = "Répondantes et répondants selon le nombre de soirée et la consommation d'alcool") |> 
+kable_styling(
+  full_width = FALSE,
+  position = "center",
+  bootstrap_options = c("striped", "bordered")
+)|> 
+  column_spec(2, color = "white",
+              background =  spec_color(tabsoiree[,1], 
+                                 end = 0.8,
+                                 option = "B"))|> 
+  column_spec(3, color = "white",
+              background =  spec_color(tabsoiree[,2], 
+                                 end = 0.8,
+                                 option = "B"))|> 
+  column_spec(4, color = "white",
+              background =  spec_color(tabsoiree[,3], 
+                                 end = 0.8,
+                                 option = "B"))|> 
+  column_spec(5, color = "white",
+              background =  spec_color(tabsoiree[,4], 
+                                 end = 0.8,
+                                 option = "B"))|> 
+  column_spec(6, color = "white",
+              background =  spec_color(tabsoiree[,5], 
+                                 end = 0.8,
+                                 option = "B"))
+```
+
+On remarque instantanément une relation entre les deux. D'après ce tableau, plus un individu fait de soirées, plus il consomme d'alcool. 
+
+## Description statistique avec simplification de modalité
+
+Ici nous procédons à une catégorisation de la consommation d'alcool. On donne les consommateurs "réguliers" (donné par **Oui** ici), consommant de façon hedomadaire ou plus de l'alcool, et les consommateurs "non réguliers" (donné par **Non** ici) les autres. Voici les résultats :
+
+```{r stat soiree alcool}
+datasummary(
+  (`Nombre de soirées par semaine en moyenne`)~((Moyenne=Mean)+
+    (`Ecart type`=SD)+
+    (Minimum=min)+
+    (Médiane=median)+
+    (Maximum=max))*
+    factor(data$conso_hebdplus),
+  data=data,
+  title="Caractéristiques statistiques du nombre de soirées effectuées par semaine en fonction de la régularité (hedomadaire) de la consommation d'alcool"
+)
+datasummary(
+  (`Nombre de soirées par semaine en moyenne`)~((Moyenne=Mean)+
+    (`Ecart type`=SD)+
+    (Minimum=min)+
+    (Médiane=median)+
+    (Maximum=max)),
+  data=data,
+  title="Caractéristiques statistiques du nombre de soirées effectuées par semaine indépendamment de la consommation d'alcool (à titre de comparaison)"
+)
+```
+
+```{r}
+temp1<- mean(data$`Nombre de soirées par semaine en moyenne`[data$conso_hebdplus=="Oui"]) |>  round(digits=2)
+temp2<-mean(data$`Nombre de soirées par semaine en moyenne`[data$conso_hebdplus=="Non"]) |>  round(digits=2)
+temp3<-median(data$`Nombre de soirées par semaine en moyenne`[data$conso_hebdplus=="Oui"]) |>   round(2)
+temp4<-median(data$`Nombre de soirées par semaine en moyenne`[data$conso_hebdplus=="Non"]) |>   round(2)
+```
+
+
+En considérant le tableau ci-dessus, plusieurs résultats peuvent être interprêtés :
+La moyenne du nombre de soirées est plus élevé chez les étudiants consommateurs réguliers d'alcool (**`r temp1`**) que la moyenne du nombre de soirées chez les étudiants consommant peu ou pas d'alcool (**`r temp2`**) Ces deux chiffres restent néanmoins très proches. 
+Le nombre  de soirées par semaine médian des consommateurs réguliers est de `r temp3`, on remarque (dans ce jeu de données) qu'il est également supérieur au nombre médian de soirées des étudiants consommant peu ou pas, à savoir `r temp4`. 
+
+## Représentation graphique 
+
+Un graphique peut nous permettre de visualiser cela plus facilement :
+
+```{r plot soiree alcool}
+data |>   
+  ggplot()+
+  aes(x=`Rythme de consommation d'alcool`,y=`Nombre de soirées par semaine en moyenne`)+
+  geom_violin(alpha=1,
+                 fill="peachpuff")+
+  labs(title="Répartition des répondants par soirée et par consommation d'alcool", subtitle="La moyenne de chaque groupe est indiquée par la croix noire")+
+  theme(legend.position="none",axis.text.x = element_text(angle = 15, hjust = 0.55, vjust = 0.6))+
+stat_summary(fun=mean,
+               geom="point",
+               shape=4,
+               size=1.5,
+               col="black")
+```
+
+On remarque d'autant plus qu'il y a une correlation nette entre le nombre de soirées par semaine et la consommation d'alcool.
+
+## Test statistique :
+
+Un test statistique nous permet de corroborer cette observation :
+
+Test d'égalité des variances au risque 0.05 :
+
+Hypothèses :
+
+- H0 : Le ratio des variances est égal à 1
+
+- H1 : Le ratio des variances est différent de 1
+```{r}
+pvv1<-var.test(data$`Nombre de soirées par semaine en moyenne`~data$conso_hebdplus, conf.level=0.95)$p.value |>   round(3)
+```
+
+P-value = **`r pvv1`**
+
+On constate que la p-value renvoyée par le test d'égalité des variances est inférieure au risque, on rejette donc l'hypothèse H0 pour un risque de 1ère espèce de 5%: les variances du nombre de soirées des individus consommant régulièrement de l'alcool et de celui des individus n'en consommant peu ou pas peuvent être considérées comme différentes.
+Il parait aussi juste d'affirmer que la p-value est relativement proche du risque, on ne peut pas non plus admettre une parfaite inégalité des variances.
+
+Test de Student au risque 0.05 :
+
+Hypothèses :
+
+- H0 : Les moyennes sont égales
+
+- H1 : Les moyennes sont différentes
+```{r}
+pvt1<-t.test(data$`Nombre de soirées par semaine en moyenne`~data$conso_hebdplus, var.equal = FALSE, conf.level=0.95)$p.value
+```
+
+P-value = `r pvt1` (= **0**)
+
+La p-value renvoyée par le test de Student est largement inférieure au risque, on rejette donc l'hypothèse H0 : les moyennes du nombre de soirées par semaine des individus consommant régulièrement de l'alcool et de celui des individus n'en consommant peu ou pas peuvent être considérées comme différentes. Au risque 0.05, on peut donc dire que faire des soirées et boire de l'alcool sont des phénomènes très liés (positivement).
+
+# Le genre : éléments déterminant de la consommation d'alcool et/ou du nombre de soirées effectuées ?
+
+## Alcool et genre
+On commence par une idée généralement admise que les hommes consomment davantage d'alcool. On donne d'abord les résultats sous forme de tableaux 
+
+### On donne d'abord la fréquence de réponses des femmes à cette question :
+
+```{r tab genreF}
+tab_genre1<-t(
+  100*addmargins(
+    round(
+      proportions(
+        table(data$`Rythme de consommation d'alcool`[data$Genre =="Féminin"])),digits=3)))
+colnames(tab_genre1)[6]<-"Total"
+tab_genre1 |> 
+  kable_plus()|>
+  surligne(1:2, italic = TRUE)
+```
+
+### Puis la fréquence de réponses des hommes à cette même question :
+
+```{r tab genreM}
+tab_genre2<-t(
+  100*addmargins(
+    round(
+      proportions(
+        table(data$`Rythme de consommation d'alcool`[data$Genre =="Masculin"])),digits=3)))
+colnames(tab_genre2)[6]<-"Total"
+tab_genre2 |> 
+kable_plus()|>
+surligne(3:5, italic = TRUE)
+```
+
+
+On remarque tout de suite plusieurs choses :
+
+* Il y a plus de femmes que d'hommes qui ne boivent jamais d'alcool.
+* Il y a plus d'hommes que de femmes qui en boivent plusieurs fois par semaine.
+
+On voit finalement que les hommes sont plus nombreux à consommer fréquemment de l'alcool que les femmes.
+
+## Nombre de soirées et genre
+
+On se demande s'il existe un lien entre le nombre de soirées par semaine effectués par un étudiant et son genre. Il paraît censé de supposer que puisque les hommes consomment globalement plus d'alcool que les femmes, et qu'il existe une relation croissante entre consommer de l'alcool et faire des soirées, alors les hommes font plus de soirées que les femmes
+
+## Test statistique :
+
+Un test statistique nous permet de vérifier cette hypothèse :
+
+Test d'égalité des variances au risque 0.05 :
+
+Hypothèses :
+
+- H0 : Le ratio des variances est égal à 1
+
+- H1 : Le ratio des variances est différent de 1
+```{r}
+pvv2<-var.test(data$`Nombre de soirées par semaine en moyenne`~data$Genre, conf.level=0.95)$p.value |>   round(3)
+```
+
+P-value = **`r pvv2`**
+
+On constate que la p-value renvoyée par le test d'égalité des variances est supérieure au risque, on conserve donc l'hypothèse H0 pour un risque de 1ère espèce de 5%: les variances du nombre de soirées des hommes et de celui des femmes peuvent être considérées comme égales.
+
+Test de Student au risque 0.05 :
+
+Hypothèses :
+
+- H0 : Les moyennes sont égales
+
+- H1 : Les moyennes sont différentes
+```{r}
+pvt2<-t.test(data$`Nombre de soirées par semaine en moyenne`~data$Genre, var.equal = TRUE, conf.level=0.95)$p.value |>   round(3)
+```
+
+P-value = **`r pvt2`**
+
+La p-value renvoyée par le test de Student est supérieure au risque, on conserve donc l'hypothèse H0 : les nombre moyen de soirées des hommes et de soirées des femmes peuvent être considérées comme égaux. Au risque 0.05, on peut donc dire que le genre d'un étudiant n'influe pas sur son nombre de soirées par semaine.
+
+→ On réfute alors notre hypothèse de départ.
+
+# Alcool et soirées et autres implications sur les aspects de la vie des étudiants
+
+## Alcool/soirées et temps de travail personnel scolaire
+
+On peut aussi se demander si consommer de l'alcool ou faire des soirées diminue le temps de travail personnel d'un étudiant. On peut effectivement entendre qu'un étudiant qui consomme régulièrement de l'alcool et/ou fait beaucoup de soirées à tendance à moins travailler.
+
+Il semble important de préciser quelques détails :
+
+* On exclut les réponses que l'on considère abérantes, à savoir les temps de travail personnel de 35h/semaine ou plus.
+
+* Nous discutons du temps de travail en heures la semaine précédent la complétion du questionnaire par l'individu. Puisque le questionnaire a initialement été lancé au début du semestre, il est envisageable que des étudiants aient donné un temps de travail personnel inférieur à celui en milieu ou fin de semestre.
+
+### Alcool d'abord
+
+On se penche sur la relation entre l'alcool et le temps de travail personnel scolaire. Voici un graphique illustrant la situation :
+
+
+```{r plot travail alcool,message=FALSE}
+data[data$`Temps de travail personnel (scolaire) la semaine dernière en heure` < 35,] |> 
+  ggplot()+
+  aes(x=`Temps de travail personnel (scolaire) la semaine dernière en heure`,
+      y=`Rythme de consommation d'alcool`,
+      col=`Rythme de consommation d'alcool`,
+      fill=`Rythme de consommation d'alcool`)+
+  geom_density_ridges(alpha=0.8, show.legend = FALSE) +
+  labs(x="Temps de travail par catégorie",
+       y="Rythme de consommation d'alcool", 
+       title="Répartition du temps de travail des répondants\nen fonction du rythme de consommation d'alcool")
+```
+
+On visualise très rapidement que la répartition semble relativement homogène entre les différents groupes, les moyennes semblent égales. Sans pousser le sujet plus loin, il est visiblement logique d'affirmer que la consommation d'alcool n'a pas d'influence sur le temps de travail personnel.
+
+### Nombre de soirées ensuite
+
+On se pose la même question pour le nombre de soirées, cette variable a-t-elle une influence sur le nombre d'heures de travail en moyenne par semaine ?
+
+```{r plot travail soiree,warning=FALSE}
+data[data$`Temps de travail personnel (scolaire) la semaine dernière en heure` < 35,] |>   
+  ggplot()+
+  aes(x=factor(`Nombre de soirées par semaine en moyenne`),y=`Temps de travail personnel (scolaire) la semaine dernière en heure`)+
+  geom_violin(alpha=1, 
+                 fill="plum1")+
+  labs(title="Répartition des répondants par nombre de soirées \n et temps de travail personnel", y = "Temps de travail personnel (scolaire)", x = "Nombre de soirées par semaine en moyenne", subtitle="La moyenne de chaque groupe est indiquée par la croix noire")+
+  theme(legend.position="none")+
+stat_summary(fun=mean,
+               geom="point",
+               shape=4,
+               size=1.5,
+               col="black")
+```
+
+De manière générale, il est difficile de conclure ou de conduire un test du fait du manque de répartition des données.
+
+On peut néanmoins conclure d'une absence de lien entre ces deux variables, du fait de moyenne similaire entre les groupes de nombre de soirées par semaine.
+
+## Alcool/soirées et la culture générale
+
+À la fin du questionnaire un test de culture générale nous était soumit. Le sujet ayant déjà été traité pendant les cours, nous nous permetterons de réutiliser quelques un de nos travaux. 
+Ici on va vérifier s'il existe un lien entre la consommation d'alcool, ainsi que le fait de faire des soirées et :
+
+* le nombre de bonnes réponses à ce test
+* la sur-estimation (ou sous-estimation) de ces dernières.
+
+### Commençons par le nombre de bonnes réponses :
+
+#### Description statistique
+
+On garde notre simplification de la catégorisation des consommateurs d'alcool.
+
+```{r stat rep alcool}
+datasummary(
+  (`Nombre de bonnes réponses`=data$nb_bonnes_reponses)~((Moyenne=Mean)+
+    (`Ecart type`=SD)+
+    (Minimum=min)+
+    (Médiane=median)+
+    (Maximum=max))*
+    factor(data$conso_hebdplus),
+  data=data,
+  title="Caractéristiques statistiques du nombre de bonnes réponses en fonction de la régularité (hedomadaire) de la consommation d'alcool"
+)
+datasummary(
+  (`Nombre de bonnes réponses`=data$nb_bonnes_reponses)~((Moyenne=Mean)+
+    (`Ecart type`=SD)+
+    (Minimum=min)+
+    (Médiane=median)+
+    (Maximum=max)),
+  data=data,
+  title="Caractéristiques statistiques du nombre de bonnes réponses indépendamment de la consommation d'alcool (à titre de comparaison)"
+)
+```
+
+```{r}
+temp1<- mean(data$nb_bonnes_reponses[data$conso_hebdplus=="Oui"]) |>  round(digits=2)
+temp2<-mean(data$nb_bonnes_reponses[data$conso_hebdplus=="Non"]) |>  round(digits=2)
+```
+
+On constate de multiple choses :
+
+On constate une légère différence de moyennes de bonnes réponses entre les deux groupes avec cette simplification, avec pour les étudiants consommant régulièrement de l'alcool **`r temp1`** bonnes réponses et **`r temp2`** pour les personnes n'en consommant peu ou pas. 
+Ces résultats ne semble cependant pas significatifs. 
+
+#### Graphiques illustrant la situation
+
+```{r plot rep alc soir,warning=FALSE,fig.width=12}
+plot3<- data |>   
+  ggplot()+
+  aes(x=`Rythme de consommation d'alcool`,y=nb_bonnes_reponses)+
+  geom_boxplot(alpha=1, 
+                 fill="pink")+
+  labs(title="Répartition des répondants par rythme de consommation d'alcool \n et nombre de bonnes réponses au test", y = "Nombre de bonnes réponses", x = "Rythme de consommation d'alcool", subtitle="La moyenne de chaque groupe est indiquée par la croix noire")+
+  theme(legend.position="none",axis.text.x = element_text(angle = 12, hjust = 0.55, vjust = 0.6))+
+stat_summary(fun=mean,
+               geom="point",
+               shape=4,
+               size=1.5,
+               col="black")
+plot4<- data |>   
+  ggplot()+
+  aes(x=factor(`Nombre de soirées par semaine en moyenne`),y=nb_bonnes_reponses)+
+  geom_boxplot(alpha=1, 
+                 fill="lightpink2")+
+  labs(title="Répartition des répondants par nombre de soirées \n et nombre de bonnes réponses au test",y = " ", x = "Nombre de soirées par semaine en moyenne")+
+  theme(legend.position="none")+
+stat_summary(fun=mean,
+               geom="point",
+               shape=4,
+               size=1.5,
+               col="black")
+plot3 + plot4
+```
+NB : on utilise toutes les modalités de rythme de consommation d'alcool, pas uniquement la consommation hebdomadaire ou non-hedomadaire.
+
+Ici, l'utilisation de ces graphiques nous permet de montrer les quantiles ainsi que l'étalement des différentes réponses par catégories.
+Malgré cela, aucune conclusion ne nous apparait évidente. On peut alors émettre que l'alcool n'a pas vraiment d'impact sur le nombre de bonnes réponses
+
+#### Tests statistiques pour la consommation d'alcool
+
+Un test statistique nous permet de trancher :
+
+Test d'égalité des variances au risque 0.05 :
+
+Hypothèses :
+
+- H0 : Le ratio des variances est égal à 1
+
+- H1 : Le ratio des variances est différent de 1
+```{r}
+pvv3<-var.test(data$nb_bonnes_reponses~data$conso_hebdplus, conf.level=0.95)$p.value |>   round(3)
+```
+
+P-value = **`r pvv3`**
+
+On constate que la p-value renvoyée par le test d'égalité des variances est largement supérieure au risque, on conserve donc l'hypothèse H0 pour un risque de 1ère espèce de 5%: les variances du nombre de bonnes réponses des individus consommant régulièrement de l'alcool et de celui des individus n'en consommant peu ou pas peuvent être considérées comme égales.
+
+Test de Student au risque 0.05 :
+
+Hypothèses :
+
+- H0 : Les moyennes sont égales
+
+- H1 : Les moyennes sont différentes
+```{r}
+pvt3<-t.test(data$nb_bonnes_reponses~data$conso_hebdplus, var.equal = TRUE, conf.level=0.95)$p.value |> round(3)
+```
+
+P-value = **`r pvt3`**
+
+La p-value renvoyée par le test de Student est supérieure au risque, on rejette donc l'hypothèse H0 : Le nombre moyen de bonnes réponses des individus consommant régulièrement de l'alcool et de celui des individus n'en consommant peu ou pas peuvent être considérés comme différents. Au risque 0.05, on peut donc dire que boire de l'alcool régulièrement n'influe pas sur le nombre de bonnes réponses obtenus sur le test de culture général du questionnaire.
+
+On peut continuer notre raisonnement en ajoutant qu'en donnant un seuil de risque supérieur à `r pvt3`, on rejetterait H0 et on admetterait que l'alcool a bel et bien un effet sur le réponses des étudiants.
+Puisqu'avec ce jeu de données la p-value est plutôt basse, avec plus de données ou plus de questions, on pourrait éventuellement trouver un résultat significatif.
+
+### Puis la sur- et sous- estimation :
+
+#### Description statistique
+
+On garde notre simplification de la catégorisation des consommateurs d'alcool.
+
+```{r stat estim alcool}
+datasummary(
+  (`sur ou sous estimation`=data$surestimation)~((Moyenne=Mean)+
+    (`Ecart type`=SD)+
+    (Minimum=min)+
+    (Médiane=median)+
+    (Maximum=max))*
+    factor(data$conso_hebdplus),
+  data=data,
+  title="Caractéristiques statistiques des estimations du nombre de bonnes réponses en fonction de la régularité (hedomadaire) de la consommation d'alcool"
+)
+datasummary(
+  (`sur ou sous estimation`=data$surestimation)~((Moyenne=Mean)+
+    (`Ecart type`=SD)+
+    (Minimum=min)+
+    (Médiane=median)+
+    (Maximum=max)),
+  data=data,
+  title="Caractéristiques statistiques des estimations du nombre de bonnes réponses indépendamment de la consommation d'alcool (à titre de comparaison)"
+)
+```
+
+```{r}
+temp1<- mean(data$surestimation[data$conso_hebdplus=="Oui"]) |>  round(digits=2)
+temp2<-mean(data$surestimation[data$conso_hebdplus=="Non"]) |>  round(digits=2)
+```
+
+Étonnament les moyennes sont égales et de **`r temp1`** peu importe la régularité de la consommation d'alcool. Pas besoin de faire de test statistiques, l'alcool n'a pas d'impact sur l'estimation des bonnes réponses des étudiants (selon les données).
+
+D'un autre côté, on peut remarquer que les étudiants ont tendance à sous estimer leur culture générale
+
+#### Graphiques illustrant la situation
+
+```{r plot estim alc soir,warning=FALSE,fig.width=12}
+plot3<- data |>   
+  ggplot()+
+  aes(x=`Rythme de consommation d'alcool`,y=surestimation)+
+  geom_boxplot(alpha=1, 
+                 fill="palegreen1")+
+  labs(title="Répartition des répondants par rythme de consommation d'alcool \n et différences d'estimations", y = "Différences d'estimations", x = "Rythme de consommation d'alcool", subtitle="La moyenne de chaque groupe est indiquée par la croix noire")+
+  theme(legend.position="none",axis.text.x = element_text(angle = 12, hjust = 0.55, vjust = 0.6))+
+stat_summary(fun=mean,
+               geom="point",
+               shape=4,
+               size=1.5,
+               col="black")
+plot4<- data |>   
+  ggplot()+
+  aes(x=factor(`Nombre de soirées par semaine en moyenne`),y=surestimation)+
+  geom_boxplot(alpha=1, 
+                 fill="palegreen3")+
+  labs(title="Répartition des répondants par nombre de soirées \n et différences d'estimation",y = " ", x = "Nombre de soirées par semaine en moyenne")+
+  theme(legend.position="none")+
+stat_summary(fun=mean,
+               geom="point",
+               shape=4,
+               size=1.5,
+               col="black")
+plot3 + plot4
+```
+NB : on utilise toutes les modalités de rythme de consommation d'alcool, pas uniquement la consommation hebdomadaire ou non 
+
+```{r}
+temp1<- mean(data$surestimation[data$`Nombre de soirées par semaine en moyenne`== 2]) |>  round(digits=2)
+temp2<- mean(data$surestimation[data$`Nombre de soirées par semaine en moyenne`== 3]) |>  round(digits=2)
+```
+
+On observe aussi bien l'égalité des moyennes de différence d'estimation en fonction des rythmes de consommation d'alcool que dans la description statistique effectuée plus haut, même avec plus de modalités
+
+De l'autre côté, le graphique correspondant au nombre de soirées effectuée par les étudiants nous donne presque une vision croissante des différences d'estimation, avec des moyennes de différence d'estimation atteignant `r temp1` pour 2 soirées/semaine et `r temp2` pour 3 soirées/semaine même si cela ne fait pas beaucoup sens. Quoi qu'il en soit, le manque de modalités et de leur diversité nous empêche d'effectuer un test statistique pertinent, nous permettant de vérifier une quelconque corrélation.
+
+## Alcool/soirées et tabagisme :
+
+Cette dernière analyse est effectuée davantage pour la vérification de la cohérence des données que pour établir des liens, étant donné que le lien entre le tabagisme et nos variables d'études est connu et fort. Elle sert donc d'analyse témoin pour notre étude.
+
+#### Tableaux représentatifs
+
+Puisqu'il est question de deux variable qualitatives, il est impossible de faire une description statistique de la situation. Nous construisons néanmoins des tableaux :
+
+##### Tableau représentatif des réponses des étudiants à la question "*Fumez-vous du tabac ?*", avec l'ensemble des modalités
+```{r tab freq tabac}
+tab_freq<-t(
+  100*addmargins(
+    round(
+      proportions(
+        table(data$`Fumez-vous du tabac ?`)),digits=3)))
+colnames(tab_freq)[5]<-"Total"
+tab_freq |> 
+  kable_plus() |> 
+  column_spec(4, link = "https://www.tabac-info-service.fr",
+              color = "black"
+              )
+```
+
+Tableau de fréquence de la consommation d'alcool des personnes ayant répondu "**Oui**" la question précédente :
+```{r tab tabacoui}
+tab_tabac1<-t(
+  100*addmargins(
+    round(
+      proportions(
+        table(data$`Rythme de consommation d'alcool`[data$tabac =="Oui"])),digits=3)))
+colnames(tab_genre1)[6]<-"Total"
+tab_tabac1 |> 
+  kable_plus()|>
+  surligne(c(1,4,5), italic = TRUE)
+```
+
+Tableau de fréquence de la consommation d'alcool des personnes ayant répondu "**Non**" la question précédente :
+```{r tab tabacnon}
+tab_tabac2<-t(
+  100*addmargins(
+    round(
+      proportions(
+        table(data$`Rythme de consommation d'alcool`[data$tabac =="Non"])),digits=3)))
+colnames(tab_genre2)[6]<-"Total"
+tab_tabac2 |> 
+  kable_plus()|>
+  surligne(c(1,4,5), italic = TRUE)
+```
+
+```{r}
+temp1<- 100*(sum((data$tabac == "Oui")[data$`Rythme de consommation d'alcool` == "Environ une fois par semaine"])/sum(data$tabac == "Oui")) |> round(3)
+temp2<- 100*(sum((data$tabac == "Non")[data$`Rythme de consommation d'alcool` == "Environ une fois par semaine"])/sum(data$tabac == "Non")) |> round(3)
+```
+
+On voit bien comme supposé que la consommation d'alcool et le tabagisme sont fortement lié, au point ou aucun individu fumant du groupe étudié ne boit "jamais" d'alcool. D'un autre côté **`r temp1`**% du groupe de fumeur déclarent consommer "*environ une fois par semaine*" contre **`r temp2`**% (ce qui représente 3x plus en point de pourcentage).
+
+Au vu de notre hypothèse de base, il parait donc cohérent d'établir avec les résultats trouvé que le tabagisme et la consommation d'alcool sont lié.
+
+Maintenant nous allons vérifier si cela est également vrai pour le nombre de soirée par semaine en moyenne effectué par les étudiants.
+
+#### Tests statistiques pour le nombre de soirées
+
+Un test statistique nous permet de trancher :
+
+Test d'égalité des variances au risque 0.05 :
+
+Hypothèses :
+
+- H0 : Le ratio des variances est égal à 1
+
+- H1 : Le ratio des variances est différent de 1
+```{r}
+pvv4<-var.test(data$`Nombre de soirées par semaine en moyenne`~data$tabac, conf.level=0.95)$p.value |>   round(3)
+```
+
+P-value = **`r pvv4`**
+
+On constate que la p-value renvoyée par le test d'égalité des variances est  supérieure au risque, on conserve donc l'hypothèse H0 pour un risque de 1ère espèce de 5%: les variances du nombre de soirées des individus fumant du tabac et de celui des individus n'en fumant pas peuvent être considérées comme différentes.
+
+Test de Student au risque 0.05 :
+
+Hypothèses :
+
+- H0 : Les moyennes sont égales
+
+- H1 : Les moyennes sont différentes
+```{r}
+pvt4<-t.test(data$`Nombre de soirées par semaine en moyenne`~data$tabac, var.equal = TRUE, conf.level=0.95)$p.value
+```
+
+P-value = `r pvt4` (= **0**)
+
+La p-value renvoyée par le test de Student est quasi-nulle. On rejette donc l'hypothèse H0 : La moyenne du nombre de soirées des individus fumant du tabac et de celle des individus n'en fumant pas peuvent être considérés comme différentes. Au risque 0.05, on peut donc dire qu'il existe un lien entre le fait de fumer du tabac et de faire des soirées.
+
+# Conclusion
+
+En cherchant *de quelle façon l'alcool et les soirées impact la vie des étudiants*, nous avons pu mettre en lumière des liens entre ces deux phénomènes, puis traiter individuellement des impact de ces variables sur :
+
+* le **genre**
+* le **temps de travail personnel scolaire**
+* la **culture générale** :
+  + le nombre de bonnes réponses au test
+  + la différence entre le nombre et l'estimation de ce nombre
+* le **tabagisme**
+
+Une seule corrélation statistique a pu être mise en évidence : *entre le nombre de soirées par semaine, la régularité de la consommation d'alcool et le tabagisme*. Nous avons en effet pu établir le fait qu'au risque 0.05, les répondants faisant le plus de soirées par semaine consomment en moyenne significativement plus d'alcool et de tabac que ceux qui en font moins (ou l'inverse ?). On peut également ajouter que malgré l'impossibilité d'effectuer un test statistique, les hommes ont un rythme de consommation d'alcool plus élevé que les femmes en proportion. 
+
+L'étude aurait pu être poussée sur d'autres variables pertinentes telles que la triche au test de culture, le temps passé sur les réseaux sociaux ou le téléphone, le fait de jouer au jeu vidéo, etc. Nous avons également réalisé des tests pour un certain nombre de ces variables, sans pour autant mettre une corrélation en évidence, nous avons donc décidé de ne pas les inclure à l'étude en plus de ceux des quatre variables précédemment étudiées. 
+
+Cette absence de corrélation peut aussi bien être expliquée par le fait que les deux variables mises en relation n'ont aucun lien que par des propriétés propres à l'échantillon. En effet, celui-ci n'étant constitué que d'étudiants de l'[Université de Tours](https://www.univ-tours.fr/), les résultats obtenus par son analyse seront forcéments différents de ceux résultant de l'analyse d'un échantillon pris sur l'ensemble d'une population. On précise donc que la seule corrélation prouvée par les tests ci-dessus est propre à cet échantillon et ne peut en aucun cas être appliquée à un autre.
+
+
