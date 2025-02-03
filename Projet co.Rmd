@@ -1,0 +1,198 @@
+---
+title: "Projet collectif"
+author: "Fabien Noisette, Léa Martineau, Antoine Ollivier, Mathéo Richer, Amélie Roy"
+date: "8/04/2024"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Initialisation :
+```{r, warning = FALSE, message = FALSE}
+require(data.table)
+require(stargazer)
+library(haven)
+library(dplyr)
+data<-read_dta("Data/Data_Global.dta")
+```
+
+# Premier coup d'oeil aux données
+```{r}
+nrow(data)
+ncol(data)
+sapply(data, class)
+```
+Il y a **`r nrow(data)`** observations et **`r ncol(data)`** variables. Les variables sont toutes numeriques donc quantitatives
+```{r}
+sum(is.na(data))
+```
+Il y a beaucoup de valeurs omises.
+```{r}
+summary(data)
+```
+
+# Introduction :
+
+Dans le cours de macroéconomie, nous avons vu que la qualité des institutions joue un important rôle sur le développement d'un pays, au delà d'autres facteurs comme le progrès technique, l'accumulation du capital ou le niveaux d'éducation de base.
+En effet celle-ci à un rôle sur l'investissement venant de l'étranger et permet d'accroître in fine le taux de croissance du PIB/tête
+
+Avant de vérifier cela dans des régessions, nous devons traiter les données bruts :
+
+# Traitement des données préliminaire
+
+```{r ébauche, eval=FALSE, echo=FALSE}
+attach(data)
+data <- data |> 
+  mutate(gr_gdpk = case_when(
+    period == 2 ~ (gdpk - lag(gdpk, default = first(gdpk))) / lag(gdpk, default = first(gdpk)) * 100,
+    period == 3 ~ (gdpk - lag(gdpk, default = first(gdpk))) / lag(gdpk, default = first(gdpk)) * 100,
+    period == 4 ~ (gdpk - lag(gdpk, default = first(gdpk))) / lag(gdpk, default = first(gdpk)) * 100,
+    period == 5 ~ (gdpk - lag(gdpk, default = first(gdpk))) / lag(gdpk, default = first(gdpk)) * 100,
+    period == 6 ~ (gdpk - lag(gdpk, default = first(gdpk))) / lag(gdpk, default = first(gdpk)) * 100,
+    period == 7 ~ (gdpk - lag(gdpk, default = first(gdpk))) / lag(gdpk, default = first(gdpk)) * 100,
+    period == 8 ~ (gdpk - lag(gdpk, default = first(gdpk))) / lag(gdpk, default = first(gdpk)) * 100,
+    TRUE ~ NA_real_
+  ))
+```
+
+Tout d'abord, puisqu'il s'agit de données de panel, nous allons utiliser les outils appropriés afin d'estimer des régressions.
+```{r, warning=FALSE, message=FALSE}
+library(plm)
+datap <- pdata.frame(data, index=c("CountryName_WDI_SA","period"))
+```
+Ce code va nous permettre de créer un autre dataframe permettant d’indiquer à plm quelles sont les variables (ici *CountryName_WDI_SA* et *period*) permettant d’identifier respectivement les individus et les périodes
+
+Ensuite, nous avons besoin de créer la variable du taux de croissance du produit par tête, qui est la variable d'intérêt ici :
+```{r}
+datap <- datap |> 
+  group_by(CountryName_WDI_SA) |> 
+  mutate(gr_gdpk = case_when(
+    period == 1 ~ ifelse(is.na(gdpk[period == 1]) , NA_real_, 0),
+    period == 2 ~ (gdpk[period == 2] - gdpk[period == 1]) / gdpk[period == 1] * 100,
+    period == 3 ~ (gdpk[period == 3] - gdpk[period == 2]) / gdpk[period == 2] * 100,
+    period == 4 ~ (gdpk[period == 4] - gdpk[period == 3]) / gdpk[period == 3] * 100,
+    period == 5 ~ (gdpk[period == 5] - gdpk[period == 4]) / gdpk[period == 4] * 100,
+    period == 6 ~ (gdpk[period == 6] - gdpk[period == 5]) / gdpk[period == 5] * 100,
+    period == 7 ~ (gdpk[period == 7] - gdpk[period == 6]) / gdpk[period == 6] * 100,
+    period == 8 ~ (gdpk[period == 8] - gdpk[period == 7]) / gdpk[period == 7] * 100,
+    TRUE ~ 0
+  ))
+
+```
+
+De ce fait nous perdons une période puisqu'il est impossible de créer un taux de variation à partir de la donnée de la période 1. Je la remplace donc par un 0 (sauf lorsqu'il n'y avait déjà pas de données).
+
+Maitenant que nous avons nos données traitées, on peut commencer nos régressions :
+
+# Première régression
+On utilisera ici des modèles à effet fixe. Un estimateur within est utilisé car il est constitant dans tous les cas.
+```{r tests, eval = FALSE, echo=FALSE}
+reg1bis <- lm(gdpk~EconomicFreedomSummaryIndex,data=data)
+summary(reg1bis)
+```
+
+Dans cette première régression, nous allons tenter de mesurer l'impact seul de la qualité des institutions économiques, à l'aide de la variable *EconomicFreedomSummaryIndex*, qui représente un index de la "liberté économique" d'un pays, une valeur comprise entre 1 et 10 :
+```{r reg 1, warning=FALSE}
+reg1 <-plm(gr_gdpk~EconomicFreedomSummaryIndex,data=datap,model="within")
+summary(reg1)
+```
+On remarque tout de suite un lien significatif entre la qualité des institutions économiques et le taux de croissance économique par tête. Interprétation :
+
+Une augmentation d'un point d'index de la "liberté économique" (la qualité des institutions économiques) est associée en moyenne à une augmentation de **`r round(abs(summary(reg1)$coefficients[1,1]), 2)`** point de pourcentage du taux de croissance du PIB par tête.
+
+Mais ici on a tout de suite un problème d'endogénéité de variable omises : Il manque des variables intervenant et dans le taux de croissance du produit par tête *gr_gdpk* et dans la qualité des institutions économiques *EconomicFreedomSummaryIndex*, comme par exemple le taux d'éducation, la santé, l'ouverture au commerce. Ajoutons les dans un seconde régression :
+
+# Seconde régression (introduction de variables jugées endogènes)
+```{r, eval=FALSE,echo=FALSE}
+reg2 <- lm(gdpk~EconomicFreedomSummaryIndex+Lifeexp+hc,data=data)
+summary(reg2)
+```
+Nous ajoutons effectivement les variables associées à l'éducation (*hc* pour human capital), la santé (*Lifeexp*), et l'ouverture au commerce (*trade_open*). Voici les résultats :
+
+```{r reg 2, warning=FALSE}
+reg2 <-plm(gr_gdpk~EconomicFreedomSummaryIndex+Lifeexp+trade_open+hc,data=datap,model="within")
+summary(reg2)
+```
+
+On remarque ici que le coefficient associé à *EconomicFreedomSummaryIndex* était biaisé puisqu'il a changé de valeur (il passe de **`r round(abs(summary(reg1)$coefficients[1,1]), 2)`** dans la première régression à **`r round(abs(summary(reg2)$coefficients[1,1]), 2)`** ici) tout en restant par ailleurs significatif.
+Ceci étant dit les coefficient associé à *Lifeexp* et *trade_open* expliquent relativement mal le taux de croissance du PIB/tête dans le modèle estimé (Les coefficients de ces variables sont peu significatives, leurs p-values sont chacune supérieures à 0,10).
+
+Il existe cependant un autre problème d'endogénéité, plus exactement un effet de simultanéité entre le taux de croissance du PIB/tête et la qualité des institutions économiques, puisque chacune de ces variables dépend de l'autre. 
+
+On peut limiter ce problème en introduisant un lag, en régressant le taux de croissance du PIB/tête en fonction de la qualité des institutions de la période précédente.
+
+# Troisième régression (introduction du lag)
+
+Pour ce faire nous allons créer une autre variable cette fois ci correspondant à la qualité des institutions en t-1 (par exemple pour la période 2 la variable prendra la valeur de la variable *EconomicFreedomSummaryIndex* de la période 1).
+Cela nous permet d'évaluer la qualité des institutions économiques de la période passée sur le taux de croissance du PIB/tête de la période actuelle afin d'observer l'influence des décisions sur les résultats futurs.
+
+Voici donc la variable créée (nommée *EFSILagged*) :
+```{r}
+datap$EFSILagged <- ave(datap$EconomicFreedomSummaryIndex, datap$CountryName_WDI_SA, FUN = function(x) c(NA, head(x, -1)))
+```
+
+Nous n'avons plus qu'à réestimer la régression en remplaçant *EconomicFreedomSummaryIndex* par notre nouveau *EFSILagged* :
+```{r reg 3, warning=FALSE}
+reg3 <-plm(gr_gdpk~EFSILagged+Lifeexp+trade_open+hc,data=datap,model="within")
+summary(reg3)
+```
+
+```{r reg 3bis,eval=FALSE,echo=FALSE}
+reg3bis <-plm(gr_gdpk~EFSILagged+Lifeexp+trade_open+hc+PoliticalStabilityandAbsence,data=datap,model="within")
+summary(reg3bis)
+```
+
+Nous remarquons que l'impact de la qualité des institutions économiques est moins importante, même si toujours présente. On peut à nouveau interpréter :
+
+Une augmentation d'un point d'index de la "liberté économique" (la qualité des institutions économiques) est associée en moyenne à une augmentation de **`r round(abs(summary(reg3)$coefficients[1,1]), 2)`** point de pourcentage du taux de croissance du PIB par tête.
+
+# Conclusion :
+Nous avons vu d'après la théorie que la qualité des institutions économiques jouait un rôle important sur le taux de croissance du PIB/tête.
+
+Nous avons ensuite vérifié par les données cette hypothèse, en construisant des modèles de régressions linéaires limitant au possible le biais sur la variable d'intérêt, à savoir la qualité des institutions économiques.
+
+Nous concluons finalement que l'hypothèse est vérifiée, la qualité des institutions à un impact significatif et positif sur le taux de croissance du PIB par tête.
+
+
+
+
+
+
+
+
+
+```{r regtest, warning=FALSE, eval=FALSE, echo=FALSE}
+reg2bis <-plm(gdpk~EconomicFreedomSummaryIndex+Lifeexp+trade_open+hc,data=datap,model="within")
+summary(reg2bis)
+```
+
+
+```{r autre reg test, eval=FALSE,echo=FALSE}
+datap <- datap |> 
+  group_by(CountryName_WDI_SA) |> 
+  mutate(gr_EFSI = case_when(
+    period == 1 ~ ifelse(is.na(EconomicFreedomSummaryIndex[period == 1]) , NA_real_, 0),
+    period == 2 ~ (EconomicFreedomSummaryIndex[period == 2] - EconomicFreedomSummaryIndex[period == 1]) / EconomicFreedomSummaryIndex[period == 1] * 100,
+    period == 3 ~ (EconomicFreedomSummaryIndex[period == 3] - EconomicFreedomSummaryIndex[period == 2]) / EconomicFreedomSummaryIndex[period == 2] * 100,
+    period == 4 ~ (EconomicFreedomSummaryIndex[period == 4] - EconomicFreedomSummaryIndex[period == 3]) / EconomicFreedomSummaryIndex[period == 3] * 100,
+    period == 5 ~ (EconomicFreedomSummaryIndex[period == 5] - EconomicFreedomSummaryIndex[period == 4]) / EconomicFreedomSummaryIndex[period == 4] * 100,
+    period == 6 ~ (EconomicFreedomSummaryIndex[period == 6] - EconomicFreedomSummaryIndex[period == 5]) / EconomicFreedomSummaryIndex[period == 5] * 100,
+    period == 7 ~ (EconomicFreedomSummaryIndex[period == 7] - EconomicFreedomSummaryIndex[period == 6]) / EconomicFreedomSummaryIndex[period == 6] * 100,
+    period == 8 ~ (EconomicFreedomSummaryIndex[period == 8] - EconomicFreedomSummaryIndex[period == 7]) / EconomicFreedomSummaryIndex[period == 7] * 100,
+    TRUE ~ 0
+  ))
+
+reg4 <-plm(gr_gdpk~gr_EFSI,data=datap,model="within")
+summary(reg4)
+
+datap$gr_EFSILagged <- ave(datap$gr_EFSI, datap$CountryName_WDI_SA, FUN = function(x) c(NA, head(x, -1)))
+
+reg5 <-plm(gr_gdpk~gr_EFSILagged,data=datap,model="within")
+summary(reg5)
+```
+
+```{r plot, eval=FALSE,echo=FALSE}
+plot(data$...1,data$Import,axes=T,pch=16,type="o",cex=2,col="orange",ylab="Importation",xlab="Année", main="Importation",col.main="brown4")
+```
+
+
